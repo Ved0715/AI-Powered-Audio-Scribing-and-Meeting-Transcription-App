@@ -40,8 +40,8 @@ io.on("connection", (socket) => {
                 smart_format: true,
                 encoding: "linear16",
                 sample_rate: 16000,
-                channels: 1,
-                interim_results: true,
+                channels: 2,
+                multichannel: true,
             });
 
             connection.on(LiveTranscriptionEvents.Open, () => {
@@ -53,11 +53,20 @@ io.on("connection", (socket) => {
                 const transcript = data.channel.alternatives[0].transcript;
                 const isFinal = data.is_final;
 
-                if (transcript) {
-                    // console.log("🗣️ Transcription:", transcript, isFinal ? "(Final)" : "(Interim)");
+                // Determine speaker based on channel
+                // data.channel_index is usually an array [0] or [1] for multichannel
+                const channelIndex = data.channel_index && data.channel_index[0] !== undefined
+                    ? data.channel_index[0]
+                    : 0;
+
+                const speaker = channelIndex === 0 ? "Me" : "Other";
+
+                if (transcript && transcript.trim().length > 0) {
+                    // console.log(`🗣️ [${speaker}] ${transcript}`);
                     socket.emit("transcription", {
                         text: transcript,
                         isFinal: isFinal,
+                        speaker: speaker,
                         type: "asr"
                     });
                 }

@@ -9,22 +9,26 @@ class RecorderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.bufferSize = 2048;
-    this.buffer = new Float32Array(this.bufferSize);
+    // Buffer for stereo (2 channels), so size is 2x
+    this.buffer = new Float32Array(this.bufferSize * 2);
     this.index = 0;
   }
 
   process(inputs) {
     const input = inputs[0];
     if (input && input.length > 0) {
-      const channelData = input[0];
+      const left = input[0];
+      const right = input.length > 1 ? input[1] : new Float32Array(left.length);
       
-      for (let i = 0; i < channelData.length; i++) {
-        this.buffer[this.index++] = channelData[i];
+      for (let i = 0; i < left.length; i++) {
+        // Interleave: Left, Right, Left, Right...
+        this.buffer[this.index++] = left[i];
+        this.buffer[this.index++] = right ? right[i] : 0;
         
-        if (this.index >= this.bufferSize) {
-          // Convert Float32 to Int16 PCM
-          const pcmBuffer = new Int16Array(this.bufferSize);
-          for (let j = 0; j < this.bufferSize; j++) {
+        if (this.index >= this.bufferSize * 2) {
+          // Convert Float32 to Int16 PCM (Stereo)
+          const pcmBuffer = new Int16Array(this.bufferSize * 2);
+          for (let j = 0; j < this.bufferSize * 2; j++) {
             const s = Math.max(-1, Math.min(1, this.buffer[j]));
             pcmBuffer[j] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
@@ -51,14 +55,15 @@ export default function LiveAudioRecorder() {
 
     useEffect(() => {
         // Listen for transcription from backend
-        socket.on("transcription", (data: { text: string; isFinal: boolean}) => {
+        socket.on("transcription", (data: { text: string; isFinal: boolean; speaker?: string }) => {
+            const speakerLabel = data.speaker ? `[${data.speaker}] ` : "";
+            const textWithSpeaker = `${speakerLabel}${data.text}`;
+
             if (data.isFinal) {
-                // Final transcript - append to permanent transcript
-                setTranscript((prev) => prev + data.text + " ");
-                setInterimTranscript(""); // Clear interim
+                setTranscript((prev) => prev + "\n" + textWithSpeaker);
+                setInterimTranscript(""); 
             } else {
-                // Interim transcript - show as preview
-                setInterimTranscript(data.text);
+                setInterimTranscript(textWithSpeaker);
             }
         });
 
@@ -93,6 +98,7 @@ export default function LiveAudioRecorder() {
                     echoCancellation: true,
                     noiseSuppression: true,
                     sampleRate: 16000,
+                    channelCount: 1
                 }
             });
 
@@ -100,18 +106,19 @@ export default function LiveAudioRecorder() {
             // Alert user first so they know what to do
             alert("Please select the Tab you want to transcribe and ensure 'Share tab audio' is checked.");
             const tabStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
+                video: true, // Required for getDisplayMedia
                 audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
                     sampleRate: 16000,
-                },
+                    channelCount: 1,
+                    echoCancellation: false, // Capture raw audio from tab
+                    noiseSuppression: false
+                }
             });
 
+            // Check if user shared audio
             const tabAudioTrack = tabStream.getAudioTracks()[0];
             if (!tabAudioTrack) {
-                alert("No tab audio shared! Please try again and check 'Share tab audio'.");
+                alert("You didn't share audio! Please try again and check the 'Share audio' box.");
                 micStream.getTracks().forEach(t => t.stop());
                 tabStream.getTracks().forEach(t => t.stop());
                 return;
@@ -125,12 +132,14 @@ export default function LiveAudioRecorder() {
             const micSource = context.createMediaStreamSource(micStream);
             const tabSource = context.createMediaStreamSource(new MediaStream([tabAudioTrack]));
 
-            // Create a Mixer (GainNode)
-            const mixer = context.createGain();
+            // Create a Channel Merger (2 Channels: Left=Mic, Right=Tab)
+            const merger = context.createChannelMerger(2);
 
-            // Connect sources to mixer
-            micSource.connect(mixer);
-            tabSource.connect(mixer);
+            // Connect Mic to Channel 0 (Left)
+            micSource.connect(merger, 0, 0);
+            
+            // Connect Tab to Channel 1 (Right)
+            tabSource.connect(merger, 0, 1);
 
             streamRef.current = tabStream; // Keep tab stream as main ref for cleanup
             const allTracks = [...micStream.getTracks(), ...tabStream.getTracks()];
@@ -140,13 +149,15 @@ export default function LiveAudioRecorder() {
             const workletUrl = URL.createObjectURL(workletBlob);
             await context.audioWorklet.addModule(workletUrl);
 
-            const workletNode = new AudioWorkletNode(context, "recorder-worklet");
+            const workletNode = new AudioWorkletNode(context, "recorder-worklet", {
+                outputChannelCount: [2] // Ensure output is stereo if needed, though we send data via port
+            });
             workletNodeRef.current = workletNode;
 
-            // Connect Mixer -> Worklet
-            mixer.connect(workletNode);
+            // Connect Merger -> Worklet
+            merger.connect(workletNode);
 
-            // Connect Worklet -> Silent Sink (to keep graph active without feedback)
+            // Connect Worklet -> Silent Sink (to keep graph active)
             const silentSink = context.createGain();
             silentSink.gain.value = 0;
             workletNode.connect(silentSink);
