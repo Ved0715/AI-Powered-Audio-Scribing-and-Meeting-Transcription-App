@@ -3,9 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import "dotenv/config";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import fs from "fs";
-import path from "path";
+import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 
 const app = express();
 const httpServer = createServer(app);
@@ -16,9 +14,8 @@ const io = new Server(httpServer, {
     },
 });
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+// Initialize Deepgram
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY || "");
 
 app.use(cors());
 app.use(express.json());
@@ -27,70 +24,93 @@ app.get("/health", (req, res) => {
     res.json({ status: "ok" });
 });
 
-// Store active audio buffers
-const audioBuffers: Record<string, Buffer[]> = {};
+// Store active Deepgram sessions
+const deepgramSessions: Record<string, any> = {};
 
 io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    console.log("✅ User connected:", socket.id);
 
-    socket.on("start-recording", () => {
-        console.log("Recording started by:", socket.id);
-        audioBuffers[socket.id] = [];
-    });
+    socket.on("start-recording", async () => {
+        try {
+            console.log("🔌 Connecting to Deepgram for:", socket.id);
 
-    socket.on("audio-chunk", (chunk) => {
+            const connection = deepgram.listen.live({
+                model: "nova-2",
+                language: "en-US",
+                smart_format: true,
+                encoding: "linear16",
+                sample_rate: 16000,
+                channels: 1,
+                interim_results: true,
+            });
 
-        const userBuffer = audioBuffers[socket.id];
-        if (userBuffer) {
-            userBuffer.push(Buffer.from(chunk));
+            connection.on(LiveTranscriptionEvents.Open, () => {
+                console.log("✅ Deepgram Connected for:", socket.id);
+                socket.emit("recording-started");
+            });
+
+            connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+                const transcript = data.channel.alternatives[0].transcript;
+                const isFinal = data.is_final;
+
+                if (transcript) {
+                    // console.log("🗣️ Transcription:", transcript, isFinal ? "(Final)" : "(Interim)");
+                    socket.emit("transcription", {
+                        text: transcript,
+                        isFinal: isFinal,
+                        type: "asr"
+                    });
+                }
+            });
+
+            connection.on(LiveTranscriptionEvents.Close, () => {
+                console.log("🔴 Deepgram Connection Closed");
+                socket.emit("recording-stopped");
+            });
+
+            connection.on(LiveTranscriptionEvents.Error, (err) => {
+                console.error("❌ Deepgram Error:", err);
+                socket.emit("error", "Transcription service error");
+            });
+
+            deepgramSessions[socket.id] = connection;
+
+        } catch (err) {
+            console.error("❌ Failed to start Deepgram:", err);
+            socket.emit("error", "Failed to start transcription");
         }
     });
 
-    socket.on("stop-recording", async () => {
-        console.log("Recording stopped by:", socket.id);
+    socket.on("audio-chunk", (chunk: any) => {
+        const connection = deepgramSessions[socket.id];
+        if (connection) {
+            // Deepgram expects raw buffer
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            connection.send(buffer);
+        }
+    });
 
-        const buffers = audioBuffers[socket.id];
-        if (!buffers || buffers.length === 0) return;
-
-        const fullBuffer = Buffer.concat(buffers);
-
-        // Clean up memory
-        delete audioBuffers[socket.id];
-
-        try {
-            // Convert buffer to base64 for Gemini
-            const audioBase64 = fullBuffer.toString("base64");
-
-            const result = await model.generateContent([
-                "Transcribe this audio exactly as spoken.",
-                {
-                    inlineData: {
-                        mimeType: "audio/webm; codecs=opus",
-                        data: audioBase64
-                    }
-                }
-            ]);
-
-            const transcript = result.response.text();
-            console.log("Transcript:", transcript);
-
-            // Send transcript back to frontend
-            socket.emit("transcription", transcript);
-
-        } catch (error) {
-            console.error("Error transcribing:", error);
-            socket.emit("error", "Failed to transcribe audio");
+    socket.on("stop-recording", () => {
+        console.log("🛑 Stopping recording for:", socket.id);
+        const connection = deepgramSessions[socket.id];
+        if (connection) {
+            connection.finish();
+            delete deepgramSessions[socket.id];
         }
     });
 
     socket.on("disconnect", () => {
-        delete audioBuffers[socket.id];
-        console.log("User disconnected:", socket.id);
+        console.log("👋 User disconnected:", socket.id);
+        const connection = deepgramSessions[socket.id];
+        if (connection) {
+            connection.finish();
+            delete deepgramSessions[socket.id];
+        }
     });
 });
 
 const PORT = process.env.PORT || 8000;
-
 httpServer.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📝 Deepgram Live Transcription Enabled`);
 });

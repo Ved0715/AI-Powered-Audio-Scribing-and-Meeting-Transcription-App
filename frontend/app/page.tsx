@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { socket } from "./socket"
-import AudioRecorder from "@/components/AudioRecorder";
+import LiveAudioRecorder from "@/components/LiveAudioRecorder";
 
 export default function Home() {
     const [isConnected, setIsConnected] = useState(false);
@@ -51,7 +51,8 @@ export default function Home() {
         </div>
       </div>
 
-      <AudioRecorder />
+      <LiveAudioRecorder />
     </main>
     );
 }
+
