@@ -1,58 +1,114 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { socket } from "./socket"
-import LiveAudioRecorder from "@/components/LiveAudioRecorder";
+import { useSession } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { Mic, Shield, Zap, Users } from "lucide-react";
 
-export default function Home() {
-    const [isConnected, setIsConnected] = useState(false);
-    const [transport, setTransport] = useState("N/A");
-    
-    useEffect(() => {
-      if (socket.connected) {
-        onConnect()
-      }
-      function onConnect() {
-        setIsConnected(true);
-        setTransport(socket.io.engine.transport.name);
+export default function LandingPage() {
+  const { data: session, isPending } = useSession();
+  const router = useRouter();
 
-        socket.io.engine.on("upgrade", (transport) => {
-          setTransport(transport.name);
-        });
-      }
+  useEffect(() => {
+    if (session && !isPending) {
+      router.replace("/dashboard");
+    }
+  }, [session, isPending, router]);
 
-      function onDisconnect() {
-        setIsConnected(false);
-        setTransport("N/A");
-      }
-      socket.on("connect", onConnect);
-      socket.on("disconnect", onDisconnect);
-
-      return () => {
-        socket.off("connect", onConnect);
-        socket.off("disconnect", onDisconnect);
-      };
-    }, []);
-
-
+  if (isPending) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gray-50 dark:bg-black">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex mb-8">
-        <div className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span>{isConnected ? "Connected" : "Disconnected"}</span>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Header */}
+      <header className="container mx-auto px-6 py-6 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Mic className="w-8 h-8 text-purple-400" />
+          <span className="text-2xl font-bold text-white">Audio Scriber</span>
+        </div>
+        <button
+          onClick={() => router.push("/sign-in")}
+          className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm border border-white/20 transition-all"
+        >
+          Sign In
+        </button>
+      </header>
+
+      {/* Hero Section */}
+      <main className="container mx-auto px-6 py-20">
+        <div className="max-w-4xl mx-auto text-center">
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
+            Transform Your Audio into{" "}
+            <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Actionable Text
+            </span>
+          </h1>
+          <p className="text-xl text-gray-300 mb-10 max-w-2xl mx-auto">
+            Real-time transcription powered by AI. Record meetings, lectures, or
+            conversations and get instant, accurate transcripts.
+          </p>
+          <button
+            onClick={() => router.push("/sign-in")}
+            className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-lg font-semibold rounded-lg shadow-2xl transition-all transform hover:scale-105"
+          >
+            Get Started Free
+          </button>
+        </div>
+
+        {/* Features */}
+        <div className="grid md:grid-cols-3 gap-8 mt-24 max-w-5xl mx-auto">
+          <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl border border-white/20">
+            <div className="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-4">
+              <Zap className="w-6 h-6 text-purple-400" />
             </div>
-            <div className="text-xs text-zinc-500">
-              {transport}
+            <h3 className="text-xl font-semibold text-white mb-3">
+              Real-Time Transcription
+            </h3>
+            <p className="text-gray-300">
+              Get instant transcriptions as you speak with industry-leading
+              accuracy powered by Deepgram AI.
+            </p>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl border border-white/20">
+            <div className="w-12 h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-4">
+              <Shield className="w-6 h-6 text-pink-400" />
             </div>
+            <h3 className="text-xl font-semibold text-white mb-3">
+              Secure & Private
+            </h3>
+            <p className="text-gray-300">
+              Your data is encrypted and secure. We respect your privacy and
+              never share your transcriptions.
+            </p>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl border border-white/20">
+            <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-4">
+              <Users className="w-6 h-6 text-blue-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-3">
+              Session Management
+            </h3>
+            <p className="text-gray-300">
+              Organize all your recordings in one place. Search, edit, and
+              export your transcripts anytime.
+            </p>
           </div>
         </div>
-      </div>
+      </main>
 
-      <LiveAudioRecorder />
-    </main>
-    );
+      {/* Footer */}
+      <footer className="container mx-auto px-6 py-8 mt-20 border-t border-white/10">
+        <div className="text-center text-gray-400 text-sm">
+          © 2025 Audio Scriber. All rights reserved.
+        </div>
+      </footer>
+    </div>
+  );
 }
-

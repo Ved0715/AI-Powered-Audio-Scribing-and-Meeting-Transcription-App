@@ -4,21 +4,33 @@ import { Server } from "socket.io";
 import cors from "cors";
 import "dotenv/config";
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+import { auth } from "./lib/auth.js";
+import { toNodeHandler } from "better-auth/node";
+
+import sessionRoutes from "./routes/sessionsRoute.js";
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*",
+        origin: process.env.FRONTEND_URL || "http://localhost:3000",
         methods: ["GET", "POST"],
+        credentials: true,
     },
 });
 
 // Initialize Deepgram
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY || "");
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    credentials: true,
+}));
 app.use(express.json());
+
+// Mount Better Auth API routes
+app.use("/api/auth", toNodeHandler(auth));
+app.use("/api/sessions", sessionRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });

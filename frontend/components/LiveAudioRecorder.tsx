@@ -44,7 +44,11 @@ class RecorderProcessor extends AudioWorkletProcessor {
 registerProcessor("recorder-worklet", RecorderProcessor);
 `;
 
-export default function LiveAudioRecorder() {
+interface LiveAudioRecorderProps {
+  activeSessionId: string | null;
+}
+
+export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorderProps) {
     const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
