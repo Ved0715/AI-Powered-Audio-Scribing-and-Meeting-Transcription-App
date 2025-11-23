@@ -85,13 +85,13 @@ model RecordingSession {
 
 model Chunk {
   id String @id @default(cuid())
-  session RecordingSession @relation(fields: [sessionId], references: [id])
   sessionId String
   seq Int
   uploadedAt DateTime @default(now())
   blobUrl String?
   sizeBytes Int
-  meta Json?
+  meta Json
+  session RecordingSession @relation(fields: [sessionId], references: [id])
 }
 
 enum SessionState {
