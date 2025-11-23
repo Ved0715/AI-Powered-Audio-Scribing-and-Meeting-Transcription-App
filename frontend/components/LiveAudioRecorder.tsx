@@ -57,6 +57,15 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
     const streamRef = useRef<MediaStream | null>(null);
     const workletNodeRef = useRef<AudioWorkletNode | null>(null);
 
+    const [currentChunk, setCurrentChunk] = useState({
+        seq: 0,
+        text: "",
+        startTime: "00:00:00",
+    });
+    const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+    const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+
     useEffect(() => {
         // Listen for transcription from backend
         socket.on("transcription", (data: { text: string; isFinal: boolean; speaker?: string }) => {
@@ -66,6 +75,12 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
             if (data.isFinal) {
                 setTranscript((prev) => prev + "\n" + textWithSpeaker);
                 setInterimTranscript(""); 
+
+                setCurrentChunk((prev) => ({
+                    ...prev,
+                    text: prev.text + "\n" + textWithSpeaker,
+                }));
+
             } else {
                 setInterimTranscript(textWithSpeaker);
             }
@@ -180,6 +195,23 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
             // Tell backend to start Gemini session
             socket.emit("start-recording");
 
+            setRecordingStartTime(Date.now());
+
+            const nextSeq = await getNextChunkSequence();
+            setCurrentChunk({
+                seq: nextSeq,  // ← Starts after existing chunks!
+                text: "",
+                startTime: formatDuration(0),
+            });
+
+            // Start 30-second chunk save interval
+            chunkIntervalRef.current = setInterval(() => {
+                console.log("⏰ [CHUNK] 30 seconds elapsed, saving chunk...");
+                saveCurrentChunk();
+            }, 30000); 
+
+            console.log("⏰ [CHUNK] Auto-save timer started (30s interval)");
+
             setIsRecording(true);
             setTranscript("");
             setInterimTranscript("");
@@ -206,11 +238,102 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         }
     };
 
-    const stop = () => {
+    const getNextChunkSequence = async (): Promise<number> => {
+        if (!activeSessionId) return 0;
+
+        try {
+            console.log("🔍 [CHUNK] Fetching existing chunks for session:", activeSessionId);
+            
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${activeSessionId}/chunks`
+            );
+
+            if (response.ok) {
+                const chunks = await response.json();
+                
+                if (chunks.length === 0) {
+                    console.log("✅ [CHUNK] No existing chunks, starting at seq 0");
+                    return 0;
+                }
+
+                // Find the highest seq number
+                const maxSeq = Math.max(...chunks.map((c: any) => c.seq));
+                const nextSeq = maxSeq + 1;
+      
+                console.log(`✅ [CHUNK] Found ${chunks.length} existing chunks, starting at seq ${nextSeq}`);
+                return nextSeq;
+            }
+        } catch (error) {
+            console.error("❌ [CHUNK] Error fetching chunks:", error);
+        }
+
+        return 0; // Fallback to 0 if error
+    };
+
+    const saveCurrentChunk = async () => {
+        if (!activeSessionId || !currentChunk.text.trim()) {
+            console.log("⏭️ [CHUNK] Skipping save - no text to save");
+            return;
+        }
+
+        try {
+            console.log(`💾 [CHUNK] Saving chunk ${currentChunk.seq}...`);
+            
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${activeSessionId}/chunks`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        seq: currentChunk.seq,
+                        text: currentChunk.text,
+                        startTime: currentChunk.startTime,
+                        endTime: formatDuration(Date.now() - recordingStartTime),
+                    }),
+                }
+            );
+
+            if (response.ok) {
+                console.log(`✅ [CHUNK] Chunk ${currentChunk.seq} saved successfully`);
+                
+                setCurrentChunk({
+                    seq: currentChunk.seq + 1,
+                    text: "",
+                    startTime: formatDuration(Date.now() - recordingStartTime),
+                });
+            } else {
+                console.error("❌ [CHUNK] Failed to save chunk");
+            }
+        } catch (error) {
+            console.error("❌ [CHUNK] Error saving chunk:", error);
+        }
+    };
+
+    // Helper function to format duration as HH:MM:SS
+    const formatDuration = (milliseconds: number): string => {
+        const totalSeconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        
+        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    };
+
+    const stop = async () => {
         console.log("🛑 Stopping recording...");
 
         // Tell backend to stop
         socket.emit("stop-recording");
+
+        if (chunkIntervalRef.current) {
+            clearInterval(chunkIntervalRef.current);
+            chunkIntervalRef.current = null;
+            console.log("⏹️ [CHUNK] Auto-save timer stopped");
+        }
+
+        // Save final chunk before stopping
+        await saveCurrentChunk();
+        console.log("💾 [CHUNK] Final chunk saved");
 
         // Cleanup audio resources
         if (workletNodeRef.current) {
