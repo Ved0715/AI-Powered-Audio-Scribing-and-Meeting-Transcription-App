@@ -91,7 +91,7 @@ model Chunk {
   blobUrl String?
   sizeBytes Int
   meta Json
-  session RecordingSession @relation(fields: [sessionId], references: [id])
+  session RecordingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 enum SessionState {

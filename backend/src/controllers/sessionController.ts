@@ -5,7 +5,7 @@ import { SessionState } from "@prisma/client";
 export const createSession = async (req: Request, res: Response) => {
     try {
         console.log("📝 [CREATE SESSION] Request received:", req.body);
-        
+
         const { userId, title } = req.body;
 
         if (!userId) {
@@ -34,7 +34,7 @@ export const createSession = async (req: Request, res: Response) => {
 export const getUserSessions = async (req: Request, res: Response) => {
     try {
         console.log("📋 [GET USER SESSIONS] UserId:", req.params.userId);
-        
+
         const { userId } = req.params;
 
         if (!userId) {
@@ -43,8 +43,8 @@ export const getUserSessions = async (req: Request, res: Response) => {
         }
 
         const sessions = await prisma.recordingSession.findMany({
-            where: {userId},
-            orderBy: {startedAt: "desc"},
+            where: { userId },
+            orderBy: { startedAt: "desc" },
             include: {
                 chunks: {
                     select: {
@@ -68,7 +68,7 @@ export const getUserSessions = async (req: Request, res: Response) => {
 export const getSessionById = async (req: Request, res: Response) => {
     try {
         console.log("🔍 [GET SESSION] Session ID:", req.params.id);
-        
+
         const { id } = req.params;
 
         if (!id) {
@@ -80,7 +80,7 @@ export const getSessionById = async (req: Request, res: Response) => {
             where: { id },
             include: {
                 chunks: {
-                    orderBy: { seq: "asc"}
+                    orderBy: { seq: "asc" }
                 },
                 user: {
                     select: {
@@ -99,7 +99,7 @@ export const getSessionById = async (req: Request, res: Response) => {
 
         console.log("✅ [GET SESSION] Session found:", session.title);
         return res.status(200).json(session);
-        
+
     } catch (error) {
         console.error("❌ [GET SESSION] Error:", error);
         res.status(500).json({ error: "Failed to get session by ID" });
@@ -109,9 +109,9 @@ export const getSessionById = async (req: Request, res: Response) => {
 export const updateSession = async (req: Request, res: Response) => {
     try {
         console.log("✏️ [UPDATE SESSION] Session ID:", req.params.id, "Data:", req.body);
-        
+
         const { id } = req.params;
-        const {title, state, transcriptText, summary, durationSec} = req.body;
+        const { title, state, transcriptText, summary, durationSec } = req.body;
 
         if (!id) {
             console.log("❌ [UPDATE SESSION] Missing session ID");
@@ -132,7 +132,7 @@ export const updateSession = async (req: Request, res: Response) => {
 
         console.log("✅ [UPDATE SESSION] Session updated successfully");
         return res.status(200).json(session);
-        
+
     } catch (error) {
         console.error("❌ [UPDATE SESSION] Error:", error);
         res.status(500).json({ error: "Failed to update session" });
@@ -142,21 +142,28 @@ export const updateSession = async (req: Request, res: Response) => {
 export const deleteSession = async (req: Request, res: Response) => {
     try {
         console.log("🗑️ [DELETE SESSION] Session ID:", req.params.id);
-        
+
         const { id } = req.params;
 
-        if(!id) {
+        if (!id) {
             console.log("❌ [DELETE SESSION] Missing session ID");
             return res.status(400).json("Session ID is required");
         }
 
-        await prisma.recordingSession.delete({
-            where: { id },
-        });
+        // Use a transaction to delete related chunks and the session atomically
+        await prisma.$transaction([
+            prisma.chunk.deleteMany({
+                where: { sessionId: id }
+            }),
+            prisma.recordingSession.delete({
+                where: { id }
+            })
+        ]);
+
 
         console.log("✅ [DELETE SESSION] Session deleted successfully");
         return res.json({ success: true });
-        
+
     } catch (error) {
         console.error("❌ [DELETE SESSION] Error:", error);
         return res.status(500).json({ error: "Failed to delete session" });

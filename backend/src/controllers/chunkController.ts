@@ -113,11 +113,15 @@ export const getFullTranscript = async (req: Request, res: Response) => {
         const fullTranscript = chunks
             .map((chunk) => {
                 const meta = chunk.meta as ChunkMeta;
+                // Debug log for first chunk
+                if (chunk.seq === 0) {
+                    console.log("🔍 [DEBUG] Chunk 0 meta:", JSON.stringify(meta, null, 2));
+                }
                 return meta?.transcriptText || "";
             })
             .join("\n");
 
-        console.log(`✅ [GET FULL TRANSCRIPT] Generated transcript with ${chunks.length} chunks`);
+        console.log(`✅ [GET FULL TRANSCRIPT] Generated transcript length: ${fullTranscript.length}`);
         return res.status(200).json({
             transcript: fullTranscript,
             chunkCount: chunks.length,

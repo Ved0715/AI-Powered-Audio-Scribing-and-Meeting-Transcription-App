@@ -1,5 +1,7 @@
 "use client";
 
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
@@ -70,14 +72,35 @@ export default function SessionPage() {
   };
 
   const fetchTranscript = async () => {
-    // Placeholder - you'll integrate this
-    setLoadingTranscript(true);
+    if (!sessionId) return;
+    
     console.log("📖 [SESSION PAGE] Fetching transcript for session:", sessionId);
-    // TODO: Call API here
-    setTimeout(() => {
-      setSavedTranscript("Sample transcript text...\nYou'll integrate the real API call here.");
+    setLoadingTranscript(true);
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${sessionId}/transcript`
+      );
+
+      console.log("📖 [SESSION PAGE] Transcript API response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("📖 [SESSION PAGE] Transcript data received:", JSON.stringify(data, null, 2));
+        
+        // Handle potential property name mismatch
+        const text = data.transcript || data.fullTranscript || "";
+        console.log(`📖 [SESSION PAGE] Setting transcript state (length: ${text.length})`);
+        setSavedTranscript(text);
+      } else {
+        console.error("Failed to load transcript");
+        setSavedTranscript("");
+      }
+    } catch (error) {
+      console.error("Error fetching transcript:", error);
+      setSavedTranscript("");
+    } finally {
       setLoadingTranscript(false);
-    }, 1000);
+    }
   };
 
   const handleGenerateSummary = () => {
@@ -112,10 +135,9 @@ export default function SessionPage() {
     return null;
   }
 
-  // Fix: Proper state detection
-  const isActivelyRecording = recordingSession.state === "RECORDING" || isRecording;
   const isCompleted = recordingSession.state === "COMPLETED";
-  const isIdle = !isActivelyRecording && !isCompleted;
+  
+  console.log("📱 [SESSION PAGE] Rendering. State:", recordingSession.state, "isCompleted:", isCompleted);
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -160,35 +182,18 @@ export default function SessionPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
-        {/* STATE 1: IDLE - Ready to start */}
-        {isIdle && (
-          <div className="max-w-2xl mx-auto">
-            <div className="flex items-center justify-center min-h-[60vh]">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Play className="w-10 h-10 text-white" />
-                </div>
-                <h2 className="text-2xl font-bold mb-4">Ready to Record</h2>
-                <p className="text-slate-400 mb-8 max-w-md">
-                  Click the button below to start capturing audio from your microphone or browser tab.
-                </p>
-                <Button
-                  size="lg"
-                  onClick={handleResume}
-                  className="bg-white text-black hover:bg-slate-200"
-                >
-                  <Play className="w-5 h-5 mr-2" />
-                  Start Recording
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STATE 2: ACTIVE RECORDING */}
-        {isActivelyRecording && (
-          <div className="flex items-center justify-center">
-            <LiveAudioRecorder activeSessionId={sessionId} />
+        {/* STATE 1: ACTIVE RECORDING / READY TO RECORD */}
+        {(!isCompleted || isRecording) && (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <ErrorBoundary>
+              <LiveAudioRecorder 
+                activeSessionId={sessionId}
+                onRecordingStop={() => {
+                  fetchSession();
+                  setIsRecording(false);
+                }}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
@@ -200,7 +205,6 @@ export default function SessionPage() {
               startedAt={recordingSession.startedAt}
               durationSec={recordingSession.durationSec}
               chunkCount={recordingSession.chunks?.length || 0}
-              transcriptLength={savedTranscript.length}
             />
 
             {/* Actions Bar */}

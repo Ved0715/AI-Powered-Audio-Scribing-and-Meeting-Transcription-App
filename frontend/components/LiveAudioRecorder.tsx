@@ -46,6 +46,7 @@ registerProcessor("recorder-worklet", RecorderProcessor);
 
 interface LiveAudioRecorderProps {
   activeSessionId: string | null;
+  onRecordingStop?: () => void;
 }
 
 // Development logger
@@ -55,7 +56,7 @@ const log = (...args: any[]) => {
     }
 };
 
-export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorderProps) {
+export default function LiveAudioRecorder({ activeSessionId, onRecordingStop }: LiveAudioRecorderProps) {
     const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
@@ -118,11 +119,15 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         };
     }, [isRecording]);
 
+    console.log("🎤 [RECORDER] Rendering. isRecording:", isRecording);
+
     const start = async () => {
         try {
             log("🎤 Starting recording...");
+            console.log("🎤 [RECORDER] Start button clicked");
 
             // 1. Get Microphone Stream (User's Voice)
+            console.log("🎤 [RECORDER] Requesting microphone access...");
             const micStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -131,6 +136,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                     channelCount: 1
                 }
             });
+            console.log("🎤 [RECORDER] Microphone access granted");
 
             // 2. Get Tab/System Audio (Meeting Voice)
             // Note: User will see browser's built-in sharing dialog
@@ -393,10 +399,33 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         await saveCurrentChunk();
         log("💾 [CHUNK] Final chunk saved");
 
+        // Update session state to COMPLETED
+        if (activeSessionId && recordingStartTimeRef.current) {
+            const durationSec = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+            
+            try {
+                await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${activeSessionId}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        state: "COMPLETED",
+                        durationSec,
+                        stoppedAt: new Date().toISOString(),
+                    }),
+                });
+                log(`✅ Session marked as COMPLETED (${durationSec}s)`);
+            } catch (error) {
+                console.error("❌ Failed to update session state:", error);
+            }
+        }
+
         // Clean up
         stopRecordingCleanup();
 
         log("✅ Recording stopped");
+        
+        // Notify parent component that recording stopped
+        onRecordingStop?.();
     };
 
     return (
@@ -410,7 +439,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                             : "bg-blue-600 hover:bg-blue-700"
                     } text-white`}
                 >
-                    {isRecording ? <Square size={32} /> : <MonitorUp size={32} />}
+                    {isRecording ? <span className="font-bold">STOP</span> : <MonitorUp size={32} />}
                 </button>
                 <p className="mt-4 text-zinc-500">
                     {isRecording ? "🔴 Listening... Click to stop" : "Click to Start Recording"}

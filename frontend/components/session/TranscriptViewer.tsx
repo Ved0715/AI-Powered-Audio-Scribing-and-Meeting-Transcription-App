@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Search } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 
 interface TranscriptViewerProps {
   transcript: string;
@@ -15,27 +15,11 @@ export default function TranscriptViewer({
   isLoading = false,
 }: TranscriptViewerProps) {
   const [copied, setCopied] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
 
   const handleCopy = () => {
     navigator.clipboard.writeText(transcript);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const highlightText = (text: string, search: string) => {
-    if (!search.trim()) return text;
-
-    const parts = text.split(new RegExp(`(${search})`, "gi"));
-    return parts.map((part, i) =>
-      part.toLowerCase() === search.toLowerCase() ? (
-        <mark key={i} className="bg-yellow-500/30 text-yellow-200">
-          {part}
-        </mark>
-      ) : (
-        part
-      )
-    );
   };
 
   return (
@@ -50,40 +34,27 @@ export default function TranscriptViewer({
               </span>
             )}
           </CardTitle>
-          <div className="flex items-center gap-2">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-48"
-              />
-            </div>
-
-            {/* Copy Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopy}
-              disabled={!transcript || copied}
-              className="border-slate-700 hover:bg-slate-800"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy
-                </>
-              )}
-            </Button>
-          </div>
+          
+          {/* Copy Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopy}
+            disabled={!transcript || copied}
+            className="border-slate-700 hover:bg-slate-800"
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 mr-2" />
+                Copy
+              </>
+            )}
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -97,7 +68,7 @@ export default function TranscriptViewer({
             </div>
           ) : transcript ? (
             <div className="whitespace-pre-wrap text-slate-300 leading-relaxed font-mono text-sm">
-              {highlightText(transcript, searchTerm)}
+              {transcript}
             </div>
           ) : (
             <div className="flex items-center justify-center h-full">
