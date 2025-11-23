@@ -56,6 +56,12 @@ io.on("connection", (socket) => {
                 sample_rate: 16000,
                 channels: 2,
                 multichannel: true,
+                // Enable interim results for real-time feedback
+                interim_results: true,
+                // Finalize transcript after 300ms of silence (faster finalization)
+                endpointing: 300,
+                // Mark utterance as complete after 1000ms silence
+                utterance_end_ms: 1000,
             });
 
             connection.on(LiveTranscriptionEvents.Open, () => {

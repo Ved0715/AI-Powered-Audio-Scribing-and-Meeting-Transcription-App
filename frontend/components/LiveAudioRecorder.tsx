@@ -48,22 +48,29 @@ interface LiveAudioRecorderProps {
   activeSessionId: string | null;
 }
 
+// Development logger
+const log = (...args: any[]) => {
+    if (process.env.NODE_ENV === 'development') {
+        console.log(...args);
+    }
+};
+
 export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorderProps) {
     const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     const contextRef = useRef<AudioContext | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const workletNodeRef = useRef<AudioWorkletNode | null>(null);
 
-    const [currentChunk, setCurrentChunk] = useState({
-        seq: 0,
-        text: "",
-        startTime: "00:00:00",
-    });
-    const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+    // Chunk management (refs only - no state for performance)
     const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const chunkTextBufferRef = useRef<string>("");
+    const chunkSeqRef = useRef<number>(0);
+    const chunkStartTimeRef = useRef<string>("00:00:00");
+    const recordingStartTimeRef = useRef<number>(0);
 
 
     useEffect(() => {
@@ -76,27 +83,25 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                 setTranscript((prev) => prev + "\n" + textWithSpeaker);
                 setInterimTranscript(""); 
 
-                setCurrentChunk((prev) => ({
-                    ...prev,
-                    text: prev.text + "\n" + textWithSpeaker,
-                }));
-
+                // Accumulate text in ref (avoids closure issues)
+                chunkTextBufferRef.current += "\n" + textWithSpeaker;
+                log(`📝 [CHUNK] Final transcript added to buffer. Length: ${chunkTextBufferRef.current.length}`);
             } else {
                 setInterimTranscript(textWithSpeaker);
             }
         });
 
         socket.on("recording-started", () => {
-            console.log("✅ Recording started on server");
+            log("✅ Recording started on server");
         });
 
         socket.on("recording-stopped", () => {
-            console.log("⏹️ Recording stopped on server");
+            log("⏹️ Recording stopped on server");
         });
 
         socket.on("error", (error: string) => {
             console.error("❌ Server error:", error);
-            alert(`Error: ${error}`);
+            setSaveError(error);
         });
 
         return () => {
@@ -104,12 +109,18 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
             socket.off("recording-started");
             socket.off("recording-stopped");
             socket.off("error");
+            
+            // CRITICAL: Cleanup on unmount to prevent memory leak
+            if (isRecording) {
+                log("⚠️ Component unmounting during recording - cleaning up");
+                stopRecordingCleanup();
+            }
         };
-    }, []);
+    }, [isRecording]);
 
     const start = async () => {
         try {
-            console.log("🎤 Starting recording...");
+            log("🎤 Starting recording...");
 
             // 1. Get Microphone Stream (User's Voice)
             const micStream = await navigator.mediaDevices.getUserMedia({
@@ -122,8 +133,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
             });
 
             // 2. Get Tab/System Audio (Meeting Voice)
-            // Alert user first so they know what to do
-            alert("Please select the Tab you want to transcribe and ensure 'Share tab audio' is checked.");
+            // Note: User will see browser's built-in sharing dialog
             const tabStream = await navigator.mediaDevices.getDisplayMedia({
                 video: true, // Required for getDisplayMedia
                 audio: {
@@ -192,31 +202,32 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                 socket.emit("audio-chunk", pcmData);
             };
 
-            // Tell backend to start Gemini session
+            // Tell backend to start recording
             socket.emit("start-recording");
 
-            setRecordingStartTime(Date.now());
+            // Initialize recording timestamp
+            const startTime = Date.now();
+            recordingStartTimeRef.current = startTime;
 
+            // Get next sequence number from existing chunks
             const nextSeq = await getNextChunkSequence();
-            setCurrentChunk({
-                seq: nextSeq,  // ← Starts after existing chunks!
-                text: "",
-                startTime: formatDuration(0),
-            });
+            chunkSeqRef.current = nextSeq;
+            chunkStartTimeRef.current = formatDuration(0);
 
             // Start 30-second chunk save interval
             chunkIntervalRef.current = setInterval(() => {
-                console.log("⏰ [CHUNK] 30 seconds elapsed, saving chunk...");
+                log("⏰ [CHUNK] 30 seconds elapsed, saving chunk...");
                 saveCurrentChunk();
-            }, 30000); 
+            }, 30000);
 
-            console.log("⏰ [CHUNK] Auto-save timer started (30s interval)");
+            log("⏰ [CHUNK] Auto-save timer started (30s interval)");
 
             setIsRecording(true);
             setTranscript("");
             setInterimTranscript("");
+            setSaveError(null);
 
-            console.log("✅ Recording started");
+            log("✅ Recording started");
         } catch (err: any) {
             console.error("❌ Error starting recording:", err);
             
@@ -242,7 +253,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         if (!activeSessionId) return 0;
 
         try {
-            console.log("🔍 [CHUNK] Fetching existing chunks for session:", activeSessionId);
+            log("🔍 [CHUNK] Fetching existing chunks for session:", activeSessionId);
             
             const response = await fetch(
                 `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${activeSessionId}/chunks`
@@ -252,7 +263,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                 const chunks = await response.json();
                 
                 if (chunks.length === 0) {
-                    console.log("✅ [CHUNK] No existing chunks, starting at seq 0");
+                    log("✅ [CHUNK] No existing chunks, starting at seq 0");
                     return 0;
                 }
 
@@ -260,7 +271,7 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                 const maxSeq = Math.max(...chunks.map((c: any) => c.seq));
                 const nextSeq = maxSeq + 1;
       
-                console.log(`✅ [CHUNK] Found ${chunks.length} existing chunks, starting at seq ${nextSeq}`);
+                log(`✅ [CHUNK] Found ${chunks.length} existing chunks, starting at seq ${nextSeq}`);
                 return nextSeq;
             }
         } catch (error) {
@@ -270,14 +281,21 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         return 0; // Fallback to 0 if error
     };
 
-    const saveCurrentChunk = async () => {
-        if (!activeSessionId || !currentChunk.text.trim()) {
-            console.log("⏭️ [CHUNK] Skipping save - no text to save");
+    const saveCurrentChunk = async (retryCount = 0): Promise<void> => {
+        const textToSave = chunkTextBufferRef.current.trim();
+        
+        log(`🔍 [CHUNK] Save attempt - Buffer: ${chunkTextBufferRef.current.length}, Trimmed: ${textToSave.length}`);
+        
+        if (!activeSessionId || !textToSave) {
+            log("⏭️ [CHUNK] Skipping save - no text to save");
             return;
         }
 
+        const MAX_RETRIES = 3;
+        const currentSeq = chunkSeqRef.current;
+
         try {
-            console.log(`💾 [CHUNK] Saving chunk ${currentChunk.seq}...`);
+            log(`💾 [CHUNK] Saving chunk ${currentSeq}...`);
             
             const response = await fetch(
                 `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${activeSessionId}/chunks`,
@@ -285,27 +303,36 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        seq: currentChunk.seq,
-                        text: currentChunk.text,
-                        startTime: currentChunk.startTime,
-                        endTime: formatDuration(Date.now() - recordingStartTime),
+                        seq: currentSeq,
+                        text: textToSave,
+                        startTime: chunkStartTimeRef.current,
+                        endTime: formatDuration(Date.now() - recordingStartTimeRef.current),
                     }),
                 }
             );
 
             if (response.ok) {
-                console.log(`✅ [CHUNK] Chunk ${currentChunk.seq} saved successfully`);
+                log(`✅ [CHUNK] Chunk ${currentSeq} saved successfully`);
+                setSaveError(null);
                 
-                setCurrentChunk({
-                    seq: currentChunk.seq + 1,
-                    text: "",
-                    startTime: formatDuration(Date.now() - recordingStartTime),
-                });
+                // Clear buffer and increment sequence
+                chunkTextBufferRef.current = "";
+                chunkSeqRef.current = currentSeq + 1;
+                chunkStartTimeRef.current = formatDuration(Date.now() - recordingStartTimeRef.current);
             } else {
-                console.error("❌ [CHUNK] Failed to save chunk");
+                throw new Error(`Server returned ${response.status}`);
             }
         } catch (error) {
             console.error("❌ [CHUNK] Error saving chunk:", error);
+            
+            // Retry logic
+            if (retryCount < MAX_RETRIES) {
+                const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+                log(`🔄 [CHUNK] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                setTimeout(() => saveCurrentChunk(retryCount + 1), delay);
+            } else {
+                setSaveError(`Failed to save chunk ${currentSeq} after ${MAX_RETRIES} attempts`);
+            }
         }
     };
 
@@ -319,21 +346,15 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     };
 
-    const stop = async () => {
-        console.log("🛑 Stopping recording...");
-
-        // Tell backend to stop
-        socket.emit("stop-recording");
-
+    const stopRecordingCleanup = () => {
+        // Stop interval timer
         if (chunkIntervalRef.current) {
             clearInterval(chunkIntervalRef.current);
             chunkIntervalRef.current = null;
-            console.log("⏹️ [CHUNK] Auto-save timer stopped");
         }
 
-        // Save final chunk before stopping
-        await saveCurrentChunk();
-        console.log("💾 [CHUNK] Final chunk saved");
+        // Clear buffer
+        chunkTextBufferRef.current = "";
 
         // Cleanup audio resources
         if (workletNodeRef.current) {
@@ -358,7 +379,24 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
         }
 
         setIsRecording(false);
-        console.log("✅ Recording stopped");
+    };
+
+    const stop = async () => {
+        log("🛑 Stopping recording...");
+
+        // Tell backend to stop
+        socket.emit("stop-recording");
+
+        log("⏹️ [CHUNK] Auto-save timer stopped");
+
+        // Save final chunk before stopping
+        await saveCurrentChunk();
+        log("💾 [CHUNK] Final chunk saved");
+
+        // Clean up
+        stopRecordingCleanup();
+
+        log("✅ Recording stopped");
     };
 
     return (
@@ -400,6 +438,19 @@ export default function LiveAudioRecorder({ activeSessionId }: LiveAudioRecorder
                     </p>
                 )}
             </div>
+
+            {/* Error Toast Notification */}
+            {saveError && (
+                <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 max-w-md">
+                    <span className="text-sm flex-1">{saveError}</span>
+                    <button 
+                        onClick={() => setSaveError(null)}
+                        className="text-white hover:text-gray-200 text-xl leading-none"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
