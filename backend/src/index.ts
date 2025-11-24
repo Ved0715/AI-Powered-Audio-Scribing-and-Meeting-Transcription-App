@@ -9,6 +9,7 @@ import { toNodeHandler } from "better-auth/node";
 
 import sessionRoutes from "./routes/sessionsRoute.js";
 import chunkRoutes from "./routes/chunkRoutes.js";
+import summaryRoutes from "./routes/summaryRoutes.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -33,6 +34,7 @@ app.use(express.json());
 app.use("/api/auth", toNodeHandler(auth));
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/sessions", chunkRoutes);
+app.use("/api/sessions", summaryRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });

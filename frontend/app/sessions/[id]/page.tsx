@@ -103,10 +103,38 @@ export default function SessionPage() {
     }
   };
 
-  const handleGenerateSummary = () => {
-    // Placeholder - you'll integrate this
-    console.log("✨ [SESSION PAGE] Generating summary for session:", sessionId);
-    // TODO: Call summary API here
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
+  const handleGenerateSummary = async () => {
+    if (!sessionId) return;
+
+    console.log("🤖 [SESSION PAGE] Generating summary for session:", sessionId);
+    setIsGeneratingSummary(true);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/sessions/${sessionId}/summary`,
+        { method: "POST" }
+      );
+
+      console.log("🤖 [SESSION PAGE] Summary API response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ [SESSION PAGE] Summary received:", data);
+        
+        // Update session with new summary
+        setRecordingSession(prev => 
+          prev ? { ...prev, summary: data.summary } : null
+        );
+      } else {
+        console.error("❌ [SESSION PAGE] Failed to generate summary");
+      }
+    } catch (error) {
+      console.error("❌ [SESSION PAGE] Error generating summary:", error);
+    } finally {
+      setIsGeneratingSummary(false);
+    }
   };
 
   const handleExportTxt = () => {
@@ -230,7 +258,7 @@ export default function SessionPage() {
               sessionId={sessionId}
               summary={recordingSession.summary}
               onGenerateSummary={handleGenerateSummary}
-              isGenerating={false}
+              isGenerating={isGeneratingSummary}
             />
           </div>
         )}
