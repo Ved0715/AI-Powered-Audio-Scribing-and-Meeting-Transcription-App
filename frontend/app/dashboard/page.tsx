@@ -7,7 +7,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Clock, Trash2 } from "lucide-react";
+import { Plus, Clock, Trash2, AudioWaveform, Mic, Play } from "lucide-react";
 import UserProfile from "@/components/UserProfile";
 
 export default function Dashboard() {
@@ -29,16 +29,11 @@ export default function Dashboard() {
   };
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Stop event bubbling
-    console.log("🗑️ [DASHBOARD] Delete button clicked for session:", sessionId);
-
-    if (confirm("Delete this session?")) {
-      console.log("✅ [DASHBOARD] User confirmed delete");
+    e.stopPropagation();
+    if (confirm("Delete this session? This action cannot be undone.")) {
       await deleteSession(sessionId);
-    } else {
-    console.log("❌ [DASHBOARD] User cancelled delete");
-  }
-};
+    }
+  };
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return "0:00";
@@ -59,118 +54,153 @@ export default function Dashboard() {
 
   if (isPending || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="relative">
+          <div className="w-20 h-20 border-4 border-zinc-800 border-t-white rounded-full animate-spin" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            ScribeAI
-          </h1>
-          <UserProfile />
-        </div>
-      </header>
+    <div className="min-h-screen bg-black relative overflow-hidden">
+      {/* Metallic gradient background */}
+      <div className="fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-zinc-950 via-black to-zinc-900" />
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-radial from-zinc-800/10 to-transparent rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-gradient-radial from-zinc-800/10 to-transparent rounded-full blur-3xl" />
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:72px_72px]" />
+      </div>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-6 py-12">
-        <div className="max-w-6xl mx-auto">
-          {/* Page Title */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold mb-2">My Sessions</h2>
-            <p className="text-slate-400">
-              Create a new session or continue an existing one
-            </p>
-          </div>
-
-          {/* Sessions Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* New Session Card */}
-            <Card
-              className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 border-purple-500/30 hover:border-purple-500/50 transition-all cursor-pointer group"
-              onClick={handleNewSession}
-            >
-              <CardContent className="flex flex-col items-center justify-center h-48 p-6">
-                <div className="w-16 h-16 rounded-full bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-all">
-                  <Plus className="w-8 h-8 text-purple-400" />
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="border-b border-zinc-800/50 backdrop-blur-xl bg-black/30">
+          <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-zinc-600 to-zinc-400 rounded-lg blur opacity-50 group-hover:opacity-75 transition-opacity" />
+                <div className="relative bg-gradient-to-br from-zinc-700 to-zinc-900 p-2 rounded-lg border border-zinc-700">
+                  <AudioWaveform className="w-6 h-6 text-white" />
                 </div>
-                <h3 className="text-xl font-semibold">New Session</h3>
-                <p className="text-slate-400 text-sm mt-2">Start recording</p>
-              </CardContent>
-            </Card>
+              </div>
+              <span className="text-2xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
+                Audio Scriber
+              </span>
+            </div>
+            <UserProfile />
+          </div>
+        </header>
 
-            {/* Existing Sessions */}
-            {sessions.map((sess) => (
-              <Card
-                key={sess.id}
-                className="bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-all cursor-pointer group"
-                onClick={() => router.push(`/sessions/${sess.id}`)}
+        {/* Main Content */}
+        <main className="container mx-auto px-6 py-12">
+          <div className="max-w-7xl mx-auto">
+            {/* Page Header */}
+            <div className="flex justify-between items-start mb-12">
+              <div>
+                <h1 className="text-5xl font-black text-white mb-3">Sessions</h1>
+                <p className="text-zinc-400 text-lg">
+                  {sessions.length > 0 
+                    ? `${sessions.length} recording${sessions.length !== 1 ? 's' : ''}`
+                    : "No recordings yet"}
+                </p>
+              </div>
+              <Button
+                onClick={handleNewSession}
+                className="bg-white text-black hover:bg-zinc-200 shadow-lg shadow-white/10"
+                size="lg"
               >
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg line-clamp-1 group-hover:text-purple-400 transition-colors">
-                        {sess.title}
-                      </CardTitle>
-                      <CardDescription className="flex items-center gap-2 mt-2">
-                        <Clock className="w-3 h-3" />
+                <Plus className="mr-2 w-5 h-5" />
+                New Recording
+              </Button>
+            </div>
+
+            {/* Sessions Grid */}
+            {sessions.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {sessions.map((sess) => (
+                  <Card
+                    key={sess.id}
+                    className="bg-zinc-950/50 border-zinc-800 hover:border-zinc-600 transition-all cursor-pointer group backdrop-blur-sm"
+                    onClick={() => router.push(`/sessions/${sess.id}`)}
+                  >
+                    <CardHeader className="space-y-4">
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-lg text-white line-clamp-2 group-hover:text-zinc-300 transition-colors">
+                            {sess.title}
+                          </CardTitle>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => handleDeleteSession(sess.id, e)}
+                          className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 flex-shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Badge
+                          variant={sess.state === "COMPLETED" ? "default" : "destructive"}
+                          className={
+                            sess.state === "COMPLETED"
+                              ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-700"
+                              : sess.state === "RECORDING"
+                              ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                              : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 border border-zinc-700"
+                          }
+                        >
+                          {sess.state === "RECORDING" && (
+                            <div className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse" />
+                          )}
+                          {sess.state}
+                        </Badge>
+                        <span className="text-sm text-zinc-500 font-mono">
+                          {formatDuration(sess.durationSec)}
+                        </span>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-zinc-500">
+                        <Clock className="w-4 h-4" />
                         {formatDate(sess.startedAt)}
-                      </CardDescription>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => handleDeleteSession(sess.id, e)}
-                      className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                      </div>
+                    </CardContent>
+
+                    {/* Hover effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-zinc-700/0 via-zinc-700/5 to-zinc-700/0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-xl" />
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              /* Empty State */
+              <Card className="bg-zinc-950/30 border-zinc-800 backdrop-blur-sm">
+                <CardContent className="flex flex-col items-center justify-center py-20">
+                  <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center justify-center mb-6">
+                    <Mic className="w-10 h-10 text-zinc-600" />
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          sess.state === "COMPLETED"
-                            ? "default"
-                            : sess.state === "RECORDING"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                        className={
-                          sess.state === "COMPLETED"
-                            ? "bg-green-500/20 text-green-400 hover:bg-green-500/30"
-                            : sess.state === "RECORDING"
-                            ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                            : "bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30"
-                        }
-                      >
-                        {sess.state}
-                      </Badge>
-                    </div>
-                    <span className="text-sm text-slate-400">
-                      {formatDuration(sess.durationSec)}
-                    </span>
-                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">No Recordings Yet</h3>
+                  <p className="text-zinc-400 mb-8 text-center max-w-md">
+                    Start your first recording session to transcribe audio and generate AI summaries
+                  </p>
+                  <Button
+                    onClick={handleNewSession}
+                    className="bg-white text-black hover:bg-zinc-200 shadow-lg shadow-white/10"
+                    size="lg"
+                  >
+                    <Plus className="mr-2 w-5 h-5" />
+                    Create First Recording
+                  </Button>
                 </CardContent>
               </Card>
-            ))}
+            )}
           </div>
-
-          {/* Empty State */}
-          {sessions.length === 0 && (
-            <div className="text-center py-12 text-slate-400">
-              <p>No sessions yet. Create your first session to get started!</p>
-            </div>
-          )}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
